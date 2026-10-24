@@ -1,0 +1,1426 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Block Buster 2.0</title>
+
+<style>
+* {
+    box-sizing: border-box;
+    user-select: none;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+        radial-gradient(circle at top, #26345c, #080b16 65%);
+    color: white;
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+#game {
+    width: min(96vw, 900px);
+}
+
+#top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 18px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.stat {
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    padding: 7px 11px;
+    border-radius: 9px;
+}
+
+canvas {
+    width: 100%;
+    height: auto;
+    display: block;
+    background: #050713;
+    border: 2px solid #46506b;
+    border-radius: 14px;
+    box-shadow: 0 0 35px rgba(0,0,0,.55);
+    touch-action: none;
+}
+
+button {
+    border: 0;
+    border-radius: 10px;
+    padding: 9px 14px;
+    color: white;
+    background: #2563eb;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #3b82f6;
+}
+
+#overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(3,5,12,.82);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10;
+}
+
+.panel {
+    width: min(90vw, 500px);
+    text-align: center;
+    padding: 35px;
+    border-radius: 22px;
+    background: linear-gradient(145deg, #18213c, #0d1224);
+    border: 1px solid #45527b;
+    box-shadow: 0 20px 70px rgba(0,0,0,.6);
+}
+
+.panel h1 {
+    font-size: 48px;
+    margin: 0 0 10px;
+}
+
+.panel p {
+    color: #cbd5e1;
+    line-height: 1.5;
+}
+
+.bigButton {
+    font-size: 21px;
+    padding: 14px 30px;
+    margin-top: 12px;
+}
+
+.hidden {
+    display: none !important;
+}
+
+#bonusText {
+    position: fixed;
+    left: 50%;
+    top: 20%;
+    transform: translateX(-50%);
+    font-size: 25px;
+    font-weight: bold;
+    pointer-events: none;
+    opacity: 0;
+    transition: .3s;
+    text-shadow: 0 3px 15px black;
+}
+
+@media (max-width: 600px) {
+    #top {
+        font-size: 14px;
+    }
+
+    .stat {
+        padding: 5px 7px;
+    }
+
+    .panel h1 {
+        font-size: 36px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div id="game">
+
+    <div id="top">
+
+        <div class="stat">
+            🏆 <span id="score">0</span>
+        </div>
+
+        <div class="stat">
+            ❤️ <span id="lives">3</span>
+        </div>
+
+        <div class="stat">
+            📊 Уровень: <span id="level">1</span>/5
+        </div>
+
+        <div class="stat">
+            ⭐ Рекорд: <span id="highScore">0</span>
+        </div>
+
+        <button id="pauseButton">⏸ Пауза</button>
+
+    </div>
+
+    <canvas id="canvas" width="900" height="600"></canvas>
+
+</div>
+
+<div id="bonusText"></div>
+
+<!-- ГЛАВНОЕ МЕНЮ -->
+
+<div id="overlay">
+
+    <div class="panel" id="menu">
+
+        <h1>🧱 Block Buster</h1>
+
+        <p>
+            Разбей все блоки, собирай бонусы<br>
+            и пройди 5 уровней!
+        </p>
+
+        <p>
+            ← → — движение<br>
+            Space — пауза
+        </p>
+
+        <button class="bigButton" id="startButton">
+            🚀 Начать игру
+        </button>
+
+    </div>
+
+    <!-- ЭКРАН ПОБЕДЫ -->
+
+    <div class="panel hidden" id="winScreen">
+
+        <h1>🎉 Победа!</h1>
+
+        <p id="winText"></p>
+
+        <button class="bigButton" id="nextButton">
+            ➡ Следующий уровень
+        </button>
+
+    </div>
+
+    <!-- ЭКРАН ПОРАЖЕНИЯ -->
+
+    <div class="panel hidden" id="loseScreen">
+
+        <h1>💥 Игра окончена</h1>
+
+        <p id="loseText"></p>
+
+        <button class="bigButton" id="restartButton">
+            🔄 Играть снова
+        </button>
+
+    </div>
+
+    <!-- ПАУЗА -->
+
+    <div class="panel hidden" id="pauseScreen">
+
+        <h1>⏸ Пауза</h1>
+
+        <p>Игра остановлена.</p>
+
+        <button class="bigButton" id="continueButton">
+            ▶ Продолжить
+        </button>
+
+    </div>
+
+</div>
+
+<script>
+
+// =====================================================
+// НАСТРОЙКИ
+// =====================================================
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const W = canvas.width;
+const H = canvas.height;
+
+let score = 0;
+let lives = 3;
+let level = 1;
+
+let running = false;
+let paused = false;
+
+let particles = [];
+
+let highScore =
+    Number(localStorage.getItem("blockBusterHighScore")) || 0;
+
+document.getElementById("highScore").textContent = highScore;
+
+
+// =====================================================
+// ПЛАТФОРМА
+// =====================================================
+
+const paddle = {
+    x: W / 2 - 65,
+    y: H - 42,
+    width: 130,
+    height: 16,
+    speed: 8,
+    targetX: W / 2
+};
+
+
+// =====================================================
+// МЯЧ
+// =====================================================
+
+const ball = {
+    x: W / 2,
+    y: H - 70,
+    radius: 9,
+    speedX: 4,
+    speedY: -4
+};
+
+
+// =====================================================
+// УПРАВЛЕНИЕ
+// =====================================================
+
+const keys = {
+    left: false,
+    right: false
+};
+
+
+document.addEventListener("keydown", function(e) {
+
+    if (e.key === "ArrowLeft") {
+        keys.left = true;
+    }
+
+    if (e.key === "ArrowRight") {
+        keys.right = true;
+    }
+
+    if (e.code === "Space") {
+        e.preventDefault();
+        togglePause();
+    }
+
+});
+
+
+document.addEventListener("keyup", function(e) {
+
+    if (e.key === "ArrowLeft") {
+        keys.left = false;
+    }
+
+    if (e.key === "ArrowRight") {
+        keys.right = false;
+    }
+
+});
+
+
+// =====================================================
+// БОНУСЫ
+// =====================================================
+
+let bonuses = [];
+
+const bonusTypes = [
+    {
+        type: "wide",
+        symbol: "W",
+        color: "#38bdf8"
+    },
+    {
+        type: "life",
+        symbol: "+",
+        color: "#22c55e"
+    },
+    {
+        type: "multi",
+        symbol: "2X",
+        color: "#f59e0b"
+    }
+];
+
+
+// =====================================================
+// БЛОКИ
+// =====================================================
+
+let bricks = [];
+
+const colors = [
+    "#ef4444",
+    "#f97316",
+    "#eab308",
+    "#22c55e",
+    "#06b6d4",
+    "#8b5cf6"
+];
+
+
+function createLevel() {
+
+    bricks = [];
+
+    const rows = 4 + level;
+    const cols = 10;
+
+    const width = 76;
+    const height = 27;
+    const gap = 8;
+
+    const totalWidth =
+        cols * width +
+        (cols - 1) * gap;
+
+    const startX =
+        (W - totalWidth) / 2;
+
+    for (let row = 0; row < rows; row++) {
+
+        for (let col = 0; col < cols; col++) {
+
+            let hp = 1;
+
+            // На поздних уровнях появляются прочные блоки
+
+            if (level >= 3 && row === 0) {
+                hp = 2;
+            }
+
+            if (level >= 5 && row < 2) {
+                hp = 2;
+            }
+
+            bricks.push({
+
+                x: startX +
+                   col * (width + gap),
+
+                y: 55 +
+                   row * (height + gap),
+
+                width,
+                height,
+
+                hp,
+                maxHp: hp,
+
+                color: colors[row % colors.length],
+
+                alive: true
+
+            });
+
+        }
+
+    }
+
+}
+
+
+// =====================================================
+// СБРОС МЯЧА
+// =====================================================
+
+function resetBall() {
+
+    ball.x = W / 2;
+    ball.y = H - 70;
+
+    const speed =
+        4 + (level - 1) * 0.45;
+
+    ball.speedX =
+        (Math.random() > .5 ? 1 : -1) * speed;
+
+    ball.speedY = -speed;
+
+    paddle.x =
+        W / 2 - paddle.width / 2;
+
+}
+
+
+// =====================================================
+// РИСОВАНИЕ
+// =====================================================
+
+function draw() {
+
+    ctx.clearRect(0, 0, W, H);
+
+    drawBackground();
+    drawBricks();
+    drawBonuses();
+    drawPaddle();
+    drawBall();
+    drawParticles();
+
+}
+
+
+// =====================================================
+// ФОН
+// =====================================================
+
+function drawBackground() {
+
+    const gradient =
+        ctx.createLinearGradient(0, 0, 0, H);
+
+    gradient.addColorStop(0, "#080d20");
+    gradient.addColorStop(1, "#02040b");
+
+    ctx.fillStyle = gradient;
+
+    ctx.fillRect(0, 0, W, H);
+
+    // декоративные звёзды
+
+    ctx.fillStyle = "rgba(255,255,255,.25)";
+
+    for (let i = 0; i < 60; i++) {
+
+        const x =
+            (i * 137) % W;
+
+        const y =
+            (i * 71) % H;
+
+        ctx.fillRect(x, y, 1, 1);
+
+    }
+
+}
+
+
+// =====================================================
+// БЛОКИ
+// =====================================================
+
+function drawBricks() {
+
+    bricks.forEach(brick => {
+
+        if (!brick.alive) return;
+
+        ctx.save();
+
+        ctx.fillStyle = brick.color;
+
+        ctx.beginPath();
+
+        ctx.roundRect(
+            brick.x,
+            brick.y,
+            brick.width,
+            brick.height,
+            6
+        );
+
+        ctx.fill();
+
+        // прочный блок
+
+        if (brick.hp > 1) {
+
+            ctx.strokeStyle =
+                "rgba(255,255,255,.8)";
+
+            ctx.lineWidth = 2;
+
+            ctx.stroke();
+
+        }
+
+        ctx.restore();
+
+    });
+
+}
+
+
+// =====================================================
+// ПЛАТФОРМА
+// =====================================================
+
+function drawPaddle() {
+
+    const gradient =
+        ctx.createLinearGradient(
+            paddle.x,
+            paddle.y,
+            paddle.x,
+            paddle.y + paddle.height
+        );
+
+    gradient.addColorStop(0, "#ffffff");
+    gradient.addColorStop(1, "#94a3b8");
+
+    ctx.fillStyle = gradient;
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+        paddle.x,
+        paddle.y,
+        paddle.width,
+        paddle.height,
+        8
+    );
+
+    ctx.fill();
+
+}
+
+
+// =====================================================
+// МЯЧ
+// =====================================================
+
+function drawBall() {
+
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = "#ffffff";
+
+    ctx.fillStyle = "#ffffff";
+
+    ctx.beginPath();
+
+    ctx.arc(
+        ball.x,
+        ball.y,
+        ball.radius,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+
+}
+
+
+// =====================================================
+// БОНУСЫ
+// =====================================================
+
+function drawBonuses() {
+
+    bonuses.forEach(bonus => {
+
+        ctx.fillStyle = bonus.color;
+
+        ctx.beginPath();
+
+        ctx.arc(
+            bonus.x,
+            bonus.y,
+            13,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+
+        ctx.fillStyle = "#07111f";
+
+        ctx.font = "bold 11px Arial";
+
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        ctx.fillText(
+            bonus.symbol,
+            bonus.x,
+            bonus.y
+        );
+
+    });
+
+}
+
+
+// =====================================================
+// ЧАСТИЦЫ
+// =====================================================
+
+function createParticles(x, y, color) {
+
+    for (let i = 0; i < 10; i++) {
+
+        particles.push({
+
+            x,
+            y,
+
+            vx:
+                (Math.random() - .5) * 5,
+
+            vy:
+                (Math.random() - .5) * 5,
+
+            life: 30,
+
+            color
+
+        });
+
+    }
+
+}
+
+
+function drawParticles() {
+
+    particles.forEach(p => {
+
+        ctx.globalAlpha =
+            p.life / 30;
+
+        ctx.fillStyle = p.color;
+
+        ctx.fillRect(
+            p.x,
+            p.y,
+            4,
+            4
+        );
+
+    });
+
+    ctx.globalAlpha = 1;
+
+}
+
+
+// =====================================================
+// ОБНОВЛЕНИЕ ЧАСТИЦ
+// =====================================================
+
+function updateParticles() {
+
+    particles.forEach(p => {
+
+        p.x += p.vx;
+        p.y += p.vy;
+
+        p.life--;
+
+    });
+
+    particles =
+        particles.filter(p => p.life > 0);
+
+}
+
+
+// =====================================================
+// ПЛАТФОРМА
+// =====================================================
+
+function updatePaddle() {
+
+    if (keys.left) {
+        paddle.x -= paddle.speed;
+    }
+
+    if (keys.right) {
+        paddle.x += paddle.speed;
+    }
+
+    // плавное управление мышью/пальцем
+
+    if (!keys.left && !keys.right) {
+
+        paddle.x +=
+            (paddle.targetX -
+             paddle.x -
+             paddle.width / 2) * .18;
+
+    }
+
+    if (paddle.x < 0) {
+        paddle.x = 0;
+    }
+
+    if (paddle.x + paddle.width > W) {
+        paddle.x =
+            W - paddle.width;
+    }
+
+}
+
+
+// =====================================================
+// МЯЧ
+// =====================================================
+
+function updateBall() {
+
+    ball.x += ball.speedX;
+    ball.y += ball.speedY;
+
+
+    // стены
+
+    if (
+        ball.x - ball.radius <= 0 ||
+        ball.x + ball.radius >= W
+    ) {
+
+        ball.speedX *= -1;
+
+        ball.x =
+            Math.max(
+                ball.radius,
+                Math.min(
+                    W - ball.radius,
+                    ball.x
+                )
+            );
+
+    }
+
+
+    if (ball.y - ball.radius <= 0) {
+
+        ball.speedY *= -1;
+
+    }
+
+
+    // платформа
+
+    if (
+        ball.speedY > 0 &&
+        ball.y + ball.radius >= paddle.y &&
+        ball.y - ball.radius <=
+            paddle.y + paddle.height &&
+        ball.x >= paddle.x &&
+        ball.x <=
+            paddle.x + paddle.width
+    ) {
+
+        const hit =
+            (ball.x - paddle.x) /
+            paddle.width;
+
+        ball.speedX =
+            (hit - .5) * 10;
+
+        ball.speedY =
+            -Math.abs(ball.speedY);
+
+    }
+
+
+    // блоки
+
+    bricks.forEach(brick => {
+
+        if (!brick.alive) return;
+
+        if (
+            ball.x + ball.radius > brick.x &&
+            ball.x - ball.radius <
+                brick.x + brick.width &&
+            ball.y + ball.radius > brick.y &&
+            ball.y - ball.radius <
+                brick.y + brick.height
+        ) {
+
+            brick.hp--;
+
+            createParticles(
+                ball.x,
+                ball.y,
+                brick.color
+            );
+
+            ball.speedY *= -1;
+
+            if (brick.hp <= 0) {
+
+                brick.alive = false;
+
+                score += 10;
+
+                // шанс появления бонуса
+
+                if (Math.random() < .12) {
+
+                    createBonus(
+                        brick.x +
+                        brick.width / 2,
+
+                        brick.y +
+                        brick.height / 2
+                    );
+
+                }
+
+            } else {
+
+                score += 5;
+
+            }
+
+            updateUI();
+
+        }
+
+    });
+
+
+    // мяч потерян
+
+    if (
+        ball.y -
+        ball.radius >
+        H
+    ) {
+
+        lives--;
+
+        updateUI();
+
+        if (lives <= 0) {
+
+            loseGame();
+
+        } else {
+
+            resetBall();
+
+        }
+
+    }
+
+}
+
+
+// =====================================================
+// БОНУСЫ
+// =====================================================
+
+function createBonus(x, y) {
+
+    const data =
+        bonusTypes[
+            Math.floor(
+                Math.random() *
+                bonusTypes.length
+            )
+        ];
+
+    bonuses.push({
+
+        x,
+        y,
+
+        speed: 2.5,
+
+        type: data.type,
+
+        symbol: data.symbol,
+
+        color: data.color
+
+    });
+
+}
+
+
+function updateBonuses() {
+
+    bonuses.forEach(bonus => {
+
+        bonus.y += bonus.speed;
+
+        // столкновение с платформой
+
+        if (
+            bonus.y + 13 >= paddle.y &&
+            bonus.y - 13 <=
+                paddle.y + paddle.height &&
+            bonus.x >= paddle.x &&
+            bonus.x <=
+                paddle.x + paddle.width
+        ) {
+
+            applyBonus(bonus);
+
+            bonus.collected = true;
+
+        }
+
+    });
+
+    bonuses =
+        bonuses.filter(
+            b =>
+                !b.collected &&
+                b.y < H + 30
+        );
+
+}
+
+
+// =====================================================
+// ПРИМЕНЕНИЕ БОНУСА
+// =====================================================
+
+function applyBonus(bonus) {
+
+    if (bonus.type === "wide") {
+
+        paddle.width = 190;
+
+        showBonus("⚡ ПЛАТФОРМА УВЕЛИЧЕНА!");
+
+        setTimeout(() => {
+
+            paddle.width = 130;
+
+        }, 7000);
+
+    }
+
+
+    if (bonus.type === "life") {
+
+        lives++;
+
+        updateUI();
+
+        showBonus("❤️ +1 ЖИЗНЬ!");
+
+    }
+
+
+    if (bonus.type === "multi") {
+
+        score += 50;
+
+        updateUI();
+
+        showBonus("⭐ +50 ОЧКОВ!");
+
+    }
+
+}
+
+
+// =====================================================
+// ТЕКСТ БОНУСА
+// =====================================================
+
+function showBonus(text) {
+
+    const el =
+        document.getElementById("bonusText");
+
+    el.textContent = text;
+
+    el.style.opacity = "1";
+
+    setTimeout(() => {
+
+        el.style.opacity = "0";
+
+    }, 1300);
+
+}
+
+
+// =====================================================
+// ПРОВЕРКА УРОВНЯ
+// =====================================================
+
+function checkLevel() {
+
+    const remaining =
+        bricks.some(
+            brick => brick.alive
+        );
+
+    if (!remaining) {
+
+        running = false;
+
+        if (level >= 5) {
+
+            winGame();
+
+        } else {
+
+            document.getElementById("winText")
+                .textContent =
+                "Уровень " +
+                level +
+                " пройден! Счёт: " +
+                score;
+
+            showScreen("winScreen");
+
+        }
+
+    }
+
+}
+
+
+// =====================================================
+// СЛЕДУЮЩИЙ УРОВЕНЬ
+// =====================================================
+
+function nextLevel() {
+
+    level++;
+
+    createLevel();
+
+    bonuses = [];
+
+    particles = [];
+
+    resetBall();
+
+    running = true;
+
+    hideOverlay();
+
+    updateUI();
+
+}
+
+
+// =====================================================
+// ПОБЕДА
+// =====================================================
+
+function winGame() {
+
+    running = false;
+
+    saveHighScore();
+
+    document.getElementById("winText")
+        .textContent =
+        "Ты прошёл все 5 уровней! " +
+        "Финальный счёт: " +
+        score;
+
+    document.getElementById("nextButton")
+        .textContent =
+        "🔄 Играть снова";
+
+    document.getElementById("nextButton")
+        .onclick = restartGame;
+
+    showScreen("winScreen");
+
+}
+
+
+// =====================================================
+// ПРОИГРЫШ
+// =====================================================
+
+function loseGame() {
+
+    running = false;
+
+    saveHighScore();
+
+    document.getElementById("loseText")
+        .textContent =
+        "Счёт: " +
+        score +
+        " | Уровень: " +
+        level;
+
+    showScreen("loseScreen");
+
+}
+
+
+// =====================================================
+// РЕКОРД
+// =====================================================
+
+function saveHighScore() {
+
+    if (score > highScore) {
+
+        highScore = score;
+
+        localStorage.setItem(
+            "blockBusterHighScore",
+            highScore
+        );
+
+    }
+
+    updateUI();
+
+}
+
+
+// =====================================================
+// UI
+// =====================================================
+
+function updateUI() {
+
+    document.getElementById("score")
+        .textContent = score;
+
+    document.getElementById("lives")
+        .textContent = lives;
+
+    document.getElementById("level")
+        .textContent = level;
+
+    document.getElementById("highScore")
+        .textContent = highScore;
+
+}
+
+
+// =====================================================
+// ЭКРАНЫ
+// =====================================================
+
+function hideAllScreens() {
+
+    document
+        .querySelectorAll(".panel")
+        .forEach(panel =>
+            panel.classList.add("hidden")
+        );
+
+}
+
+
+function showScreen(id) {
+
+    document
+        .getElementById("overlay")
+        .classList.remove("hidden");
+
+    hideAllScreens();
+
+    document
+        .getElementById(id)
+        .classList.remove("hidden");
+
+}
+
+
+function hideOverlay() {
+
+    document
+        .getElementById("overlay")
+        .classList.add("hidden");
+
+}
+
+
+// =====================================================
+// ПАУЗА
+// =====================================================
+
+function togglePause() {
+
+    if (!running) return;
+
+    paused = !paused;
+
+    if (paused) {
+
+        showScreen("pauseScreen");
+
+    } else {
+
+        hideOverlay();
+
+    }
+
+}
+
+
+// =====================================================
+// СТАРТ
+// =====================================================
+
+function startGame() {
+
+    score = 0;
+    lives = 3;
+    level = 1;
+
+    paused = false;
+    running = true;
+
+    paddle.width = 130;
+
+    bonuses = [];
+    particles = [];
+
+    createLevel();
+    resetBall();
+
+    updateUI();
+
+    hideOverlay();
+
+}
+
+
+// =====================================================
+// ПЕРЕЗАПУСК
+// =====================================================
+
+function restartGame() {
+
+    document
+        .getElementById("nextButton")
+        .onclick = nextLevel;
+
+    startGame();
+
+}
+
+
+// =====================================================
+// КНОПКИ
+// =====================================================
+
+document
+    .getElementById("startButton")
+    .onclick = startGame;
+
+document
+    .getElementById("restartButton")
+    .onclick = restartGame;
+
+document
+    .getElementById("nextButton")
+    .onclick = nextLevel;
+
+document
+    .getElementById("continueButton")
+    .onclick = function() {
+
+        paused = false;
+
+        hideOverlay();
+
+    };
+
+document
+    .getElementById("pauseButton")
+    .onclick = togglePause;
+
+
+// =====================================================
+// МЫШЬ
+// =====================================================
+
+canvas.addEventListener(
+    "mousemove",
+    function(e) {
+
+        const rect =
+            canvas.getBoundingClientRect();
+
+        const scaleX =
+            W / rect.width;
+
+        paddle.targetX =
+            (e.clientX - rect.left) *
+            scaleX;
+
+    }
+);
+
+
+// =====================================================
+// СЕНСОРНОЕ УПРАВЛЕНИЕ
+// =====================================================
+
+canvas.addEventListener(
+    "touchmove",
+    function(e) {
+
+        const rect =
+            canvas.getBoundingClientRect();
+
+        const scaleX =
+            W / rect.width;
+
+        paddle.targetX =
+            (e.touches[0].clientX -
+             rect.left) *
+            scaleX;
+
+        e.preventDefault();
+
+    },
+    { passive: false }
+);
+
+
+// =====================================================
+// ИГРОВОЙ ЦИКЛ
+// =====================================================
+
+function gameLoop() {
+
+    if (running && !paused) {
+
+        updatePaddle();
+        updateBall();
+        updateBonuses();
+        updateParticles();
+
+        checkLevel();
+
+    }
+
+    draw();
+
+    requestAnimationFrame(gameLoop);
+
+}
+
+
+createLevel();
+updateUI();
+gameLoop();
+
+</script>
+
+</body>
+</html>
